@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "bipartite-embeddings"
+version = "0.1.0"
+description = ""
+authors = ["georg <georg.squared@gmail.com>"]
+readme = "README.md"
+packages = [{include = "bipartite_embeddings"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
