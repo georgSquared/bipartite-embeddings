@@ -13,6 +13,12 @@ MOVIE_LENS_URL = "https://files.grouplens.org/datasets/movielens/ml-latest-small
 
 
 def fetch_movie_lens():
+    """
+    Fetch the MovieLens dataset and store it as a csv
+
+    Currently defaults to the small dataset
+    :return:
+    """
     r = requests.get(MOVIE_LENS_URL, stream=True)
     assert r.status_code == 200
 
