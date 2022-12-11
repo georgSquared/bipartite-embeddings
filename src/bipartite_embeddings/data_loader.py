@@ -35,16 +35,23 @@ def transform_ratings_to_edgelist(min_score=3.0):
     :return:
     """
     ratings_df = pd.read_csv(
-        os.path.join(ROOT_DIR, "data", "ml-latest-small", "ratings.csv")
+        os.path.join(ROOT_DIR, "data", "../../data/ml-latest-small", "ratings.csv")
     )
+    # Filter rows below specified rating
     ratings_df = ratings_df[ratings_df["rating"] > min_score]
 
+    # Add a prefix to user and movie ids so that they can be differentiated
+    ratings_df["userId"] = "user_" + ratings_df["userId"].astype(str)
+    ratings_df["movieId"] = "movie_" + ratings_df["movieId"].astype(str)
+
+    # Clean up the dataframe
     ratings_df = ratings_df.drop_duplicates()
     ratings_df.drop(labels=["rating", "timestamp"], axis=1, inplace=True)
 
     ratings_df.to_csv(
-        os.path.join(ROOT_DIR, "data", "ml-latest-small", "ratings_edgelist.csv"),
+        os.path.join(ROOT_DIR, "data", "../../data/ml-latest-small", "ratings_edgelist.csv"),
         index=False,
+        header=False,
     )
 
 

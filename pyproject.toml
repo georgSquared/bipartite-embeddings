@@ -1,18 +1,25 @@
 [tool.poetry]
 name = "bipartite-embeddings"
 version = "0.1.0"
-description = ""
+description = "Research for bipartite embedding generation"
 authors = ["georg <georg.squared@gmail.com>"]
 readme = "README.md"
-packages = [{include = "bipartite_embeddings"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
 requests = "^2.28.1"
-ipdb = "^0.13.9"
 pandas = "^1.5.2"
+networkx = "^2.8.8"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.2.0"
+ipdb = "^0.13.9"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
