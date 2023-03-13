@@ -1,0 +1,11 @@
+services:
+  base:
+    build:
+      dockerfile: Dockerfile
+    container_name: bipartite
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./data:/app/data
+    stdin_open: true
+    tty: true
