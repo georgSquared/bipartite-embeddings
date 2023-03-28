@@ -1,5 +1,7 @@
 import os
+from contextlib import contextmanager
 from pathlib import Path
+from time import perf_counter
 
 import networkx as nx
 from sklearn.model_selection import train_test_split
@@ -9,6 +11,15 @@ from stellargraph.data import EdgeSplitter
 
 def get_root_dir():
     return Path(__file__).parent.parent.parent
+
+
+@contextmanager
+def performance_measuring() -> float:
+    start = perf_counter()
+    try:
+        yield
+    finally:
+        print(f"Took: {perf_counter() - start} seconds")
 
 
 def load_graph(edgelist_path=None):
@@ -21,7 +32,14 @@ def load_graph(edgelist_path=None):
             get_root_dir(), "data", "ml-latest-small", "ratings_edgelist.csv"
         )
 
-    return nx.read_edgelist(edgelist_path, delimiter=",")
+    graph = nx.read_edgelist(edgelist_path, delimiter=",")
+
+    # Relabel the nodes to be sequential integers
+    sequential_graph = nx.convert_node_labels_to_integers(
+        graph, label_attribute="original_id"
+    )
+
+    return sequential_graph
 
 
 def get_train_test_samples(G):
@@ -59,4 +77,8 @@ def get_train_test_samples(G):
         "G_test": G_test,
         "edge_ids_test": edge_ids_test,
         "edge_labels_test": edge_labels_test,
+        "examples_train": examples_train,
+        "examples_model_selection": examples_model_selection,
+        "labels_train": labels_train,
+        "labels_model_selection": labels_model_selection,
     }

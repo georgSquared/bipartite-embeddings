@@ -11,3 +11,7 @@ def test_load_movie_lens_small():
     G = load_graph()
 
     assert bipartite.is_bipartite(G)
+
+
+if __name__ == "__main__":
+    test_load_movie_lens_small()

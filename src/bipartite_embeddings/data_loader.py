@@ -35,7 +35,7 @@ def transform_ratings_to_edgelist(min_score=3.0):
     :return:
     """
     ratings_df = pd.read_csv(
-        os.path.join(ROOT_DIR, "data", "../../data/ml-latest-small", "ratings.csv")
+        os.path.join(ROOT_DIR, "data", "ml-latest-small", "ratings.csv")
     )
     # Filter rows below specified rating
     ratings_df = ratings_df[ratings_df["rating"] > min_score]
@@ -49,7 +49,7 @@ def transform_ratings_to_edgelist(min_score=3.0):
     ratings_df.drop(labels=["rating", "timestamp"], axis=1, inplace=True)
 
     ratings_df.to_csv(
-        os.path.join(ROOT_DIR, "data", "../../data/ml-latest-small", "ratings_edgelist.csv"),
+        os.path.join(ROOT_DIR, "data", "ml-latest-small", "ratings_edgelist.csv"),
         index=False,
         header=False,
     )
