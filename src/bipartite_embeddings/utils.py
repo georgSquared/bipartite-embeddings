@@ -9,6 +9,30 @@ from sklearn.model_selection import train_test_split
 from stellargraph.data import EdgeSplitter
 
 
+class DotDict(dict):
+    """
+    dot.notation access to dictionary attributes
+    """
+
+    def __getattr__(self, attr):
+        if attr in self:
+            return self[attr]
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{attr}'"
+        )
+
+    def __setattr__(self, attr, value):
+        self[attr] = value
+
+    def __delattr__(self, attr):
+        if attr in self:
+            del self[attr]
+        else:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{attr}'"
+            )
+
+
 def get_root_dir():
     return Path(__file__).parent.parent.parent
 
@@ -70,15 +94,15 @@ def get_train_test_samples(G):
         edge_ids_train, edge_labels_train, train_size=0.75, test_size=0.25
     )
 
-    return {
-        "G_train": G_train,
-        "edge_ids_train": edge_ids_train,
-        "edge_labels_train": edge_labels_train,
-        "G_test": G_test,
-        "edge_ids_test": edge_ids_test,
-        "edge_labels_test": edge_labels_test,
-        "examples_train": examples_train,
-        "examples_model_selection": examples_model_selection,
-        "labels_train": labels_train,
-        "labels_model_selection": labels_model_selection,
-    }
+    return DotDict(
+        G_train=G_train,
+        edge_ids_train=edge_ids_train,
+        edge_labels_train=edge_labels_train,
+        G_test=G_test,
+        edge_ids_test=edge_ids_test,
+        edge_labels_test=edge_labels_test,
+        examples_train=examples_train,
+        examples_model_selection=examples_model_selection,
+        labels_train=labels_train,
+        labels_model_selection=labels_model_selection,
+    )
