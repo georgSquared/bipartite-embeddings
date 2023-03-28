@@ -7,4 +7,4 @@ script_name=$1
 poetry install --no-root
 
 # Execute the script inside the base service
-docker-compose exec base python tests/$script_name
+docker compose exec base python tests/$script_name

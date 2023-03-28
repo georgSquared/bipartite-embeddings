@@ -12,4 +12,4 @@ else
     directory_path="src/bipartite_embeddings/"
 fi
 
-docker-compose exec base bash -c "cd $directory_path && exec python $script_name"
+docker compose exec base bash -c "cd $directory_path && exec python $script_name"
