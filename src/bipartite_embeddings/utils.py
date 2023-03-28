@@ -58,7 +58,7 @@ def load_graph(edgelist_path=None):
 
     graph = nx.read_edgelist(edgelist_path, delimiter=",")
 
-    # Relabel the nodes to be sequential integers
+    # Relabel the nodes to have sequential integer labels
     sequential_graph = nx.convert_node_labels_to_integers(
         graph, label_attribute="original_id"
     )
@@ -71,7 +71,8 @@ def get_train_test_samples(G):
     edge_splitter_test = EdgeSplitter(G)
 
     # Randomly sample a fraction p=0.1 of all positive links, and same number of negative links, from G, and obtain the
-    # reduced graph G_test with the sampled links removed:
+    # reduced graph G_test with the sampled links removed.
+    # In short: G - test edges = G_test
     G_test, edge_ids_test, edge_labels_test = edge_splitter_test.train_test_split(
         p=0.1, method="global", keep_connected=True
     )
@@ -80,11 +81,15 @@ def get_train_test_samples(G):
     edge_splitter_train = EdgeSplitter(G_test)
 
     # Randomly sample a fraction p=0.1 of all positive links, and same number of negative links, from G_test,
-    # and obtain the reduced graph G_train with the sampled links removed:
+    # and obtain the reduced graph G_train with the sampled links removed
+    # In short: G_test - train edges = G_train
     G_train, edge_ids_train, edge_labels_train = edge_splitter_train.train_test_split(
         p=0.1, method="global", keep_connected=True
     )
 
+    # Split the train edges into train and model selection
+    # examples_model_selection are used for parameter tuning and to essentialy train the classifier
+    # think of them as classifier test data
     (
         examples_train,
         examples_model_selection,
