@@ -7,5 +7,6 @@ services:
       - ./src:/app/src
       - ./tests:/app/tests
       - ./data:/app/data
+      - ./README.md:/app/README.md
     stdin_open: true
     tty: true
