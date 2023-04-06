@@ -66,7 +66,7 @@ def load_graph(edgelist_path=None):
     return sequential_graph
 
 
-def get_train_test_samples(G):
+def get_train_test_samples(G: nx.Graph) -> DotDict:
     # Define an edge splitter on the original graph G:
     edge_splitter_test = EdgeSplitter(G)
 
