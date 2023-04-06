@@ -18,13 +18,24 @@ class EmbeddingModel(Protocol):
         pass
 
 
+class ClassifierEstimator(Protocol):
+    def fit(self, x: List[ndarray], y: ndarray):
+        pass
+
+    def predict(self, x: List[ndarray]) -> ndarray:
+        pass
+
+    def predict_proba(self, x: List[ndarray]) -> ndarray:
+        pass
+
+
 class Evaluator:
     def __init__(
-            self,
-            graph: nx.Graph,
-            embedding_model: EmbeddingModel,
-            classifier,
-            embedding_operator: EdgeOperator,
+        self,
+        graph: nx.Graph,
+        embedding_model: EmbeddingModel,
+        classifier: ClassifierEstimator,
+        embedding_operator: EdgeOperator,
     ):
         self.graph = graph
         self.embedding_model = embedding_model
