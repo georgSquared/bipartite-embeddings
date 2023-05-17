@@ -14,4 +14,5 @@ class SampleType(Enum):
 
 class EdgeOperator(Enum):
     CONCAT = auto()
-    COSINE = auto()
+    HADAMARD = auto()
+    AVERAGE = auto()

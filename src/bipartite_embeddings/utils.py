@@ -4,6 +4,7 @@ from pathlib import Path
 from time import perf_counter
 
 import networkx as nx
+import numpy as np
 from sklearn.model_selection import train_test_split
 
 from stellargraph.data import EdgeSplitter
@@ -38,12 +39,12 @@ def get_root_dir():
 
 
 @contextmanager
-def performance_measuring() -> float:
+def performance_measuring(message: str = None) -> float:
     start = perf_counter()
     try:
         yield
     finally:
-        print(f"Took: {perf_counter() - start} seconds")
+        print(f"{message or 'Operation'}: Took: {perf_counter() - start} seconds")
 
 
 def load_graph(edgelist_path=None):
@@ -88,7 +89,7 @@ def get_train_test_samples(G: nx.Graph) -> DotDict:
     )
 
     # Split the train edges into train and model selection
-    # examples_model_selection are used for parameter tuning and to essentialy train the classifier
+    # examples_model_selection are used for parameter tuning and to essentially train the classifier
     # think of them as classifier test data
     (
         examples_train,
@@ -111,3 +112,10 @@ def get_train_test_samples(G: nx.Graph) -> DotDict:
         labels_train=labels_train,
         labels_model_selection=labels_model_selection,
     )
+
+
+def cos_sim(a, b):
+    dot_product = np.dot(a, b)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    return dot_product / (norm_a * norm_b)
