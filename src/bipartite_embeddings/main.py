@@ -1,3 +1,4 @@
+import networkx as nx
 from IPython import embed
 from sklearn.linear_model import LogisticRegressionCV
 from stellargraph.data import EdgeSplitter
@@ -5,12 +6,10 @@ from stellargraph.data import EdgeSplitter
 from bipartite_embeddings.constants import EdgeOperator
 from bipartite_embeddings.evaluator import Evaluator
 from bipartite_embeddings.idioglossia import Idioglossia
-from utils import load_graph
+from utils import load_graph, Datasets
 
 
-def roc_auc():
-    graph = load_graph()
-
+def roc_auc(graph: nx.Graph):
     evaluator = Evaluator(
         graph,
         Idioglossia(dimensions=128, decay=0.2, iterations=4),
@@ -21,20 +20,21 @@ def roc_auc():
     print(f"ROC AUC score: {evaluator.get_roc_auc_score()}")
 
 
-def precision_at_100():
-    graph = load_graph()
+def precision_at_100(graph: nx.Graph):
+    # evaluator = Evaluator(
+    #     graph,
+    #     Idioglossia(dimensions=128, decay=0.2, iterations=4),
+    # )
 
     evaluator = Evaluator(
         graph,
-        Idioglossia(dimensions=128, decay=0.2, iterations=4),
+        Idioglossia(dimensions=32, decay=0.1, iterations=2),
     )
 
     print(f"Precsion@100: {evaluator.get_precision_at_100()}")
 
 
-def streamify(batch_count: int = None):
-    graph = load_graph()
-
+def streamify(graph: nx.Graph, batch_count: int = None):
     reduced_graph, stream_edge_ids, stream_edge_labels = EdgeSplitter(
         graph
     ).train_test_split(p=0.5, method="global", keep_connected=True)
@@ -78,10 +78,14 @@ def streamify(batch_count: int = None):
 
 
 def main():
-    # roc_auc()
-    # precision_at_100()
+    graph = load_graph(dataset=Datasets.PPI)
+    from pudb import set_trace; set_trace()
 
-    streamify(batch_count=100)
+    # roc_auc(graph)
+    precision_at_100(graph)
+
+    # streamify(graph, batch_count=100)
+
 
 
 if __name__ == "__main__":

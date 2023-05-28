@@ -3,8 +3,10 @@ import os
 from io import BytesIO
 from zipfile import ZipFile
 
+import networkx as nx
 import pandas as pd
 import requests
+import scipy.io as sio
 
 from constants import ROOT_DIR, MOVIES_MIN_SCORE
 
@@ -55,21 +57,45 @@ def transform_ratings_to_edgelist(min_score=3.0):
     )
 
 
+def tranform_ppi_to_edgelist():
+    mat_file = os.path.join(ROOT_DIR, "data", "ppi", "Homo_sapiens.mat")
+    mat = sio.loadmat(mat_file)
+    graph = nx.from_scipy_sparse_matrix(mat["network"])
+
+    with open(os.path.join(ROOT_DIR, "data", "ppi", "edges.csv"), "wb") as edges_file:
+        nx.write_edgelist(graph, edges_file, data=False, delimiter=",")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Fetch and transform MovieLens data to an edgelist"
     )
 
+    # Add an argument to load the specified dataset, default to ml-small
+    parser.add_argument(
+        "-d",
+        "--dataset",
+        choices=["ml-small", "blog", "ppi"],
+        default="ml-small",
+        help="Dataset to load",
+    )
     parser.add_argument("-f", "--fetch", action="store_true")
     parser.add_argument("-t", "--transform", action="store_true")
 
     args = parser.parse_args()
 
-    if args.fetch:
-        fetch_movie_lens()
+    if args.dataset == "ml-small":
+        if args.fetch:
+            fetch_movie_lens()
 
-    if args.transform:
-        transform_ratings_to_edgelist(min_score=MOVIES_MIN_SCORE)
+        if args.transform:
+            transform_ratings_to_edgelist(min_score=MOVIES_MIN_SCORE)
+
+    elif args.dataset == "blog":
+        return
+
+    elif args.dataset == "ppi":
+        tranform_ppi_to_edgelist()
 
 
 if __name__ == "__main__":

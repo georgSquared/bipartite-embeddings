@@ -1,5 +1,6 @@
 import os
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
 from time import perf_counter
 
@@ -47,15 +48,29 @@ def performance_measuring(message: str = None) -> float:
         print(f"{message or 'Operation'}: Took: {perf_counter() - start} seconds")
 
 
-def load_graph(edgelist_path=None):
+class Datasets(Enum):
+    ML_SMALL = "ml-small"
+    BLOG = "blog"
+    PPI = "ppi"
+
+
+def load_graph(edgelist_path=None, dataset: Datasets = Datasets.ML_SMALL):
     """
     Load the graph from a given edgelist file
     :return:
     """
+
     if not edgelist_path:
-        edgelist_path = os.path.join(
-            get_root_dir(), "data", "ml-latest-small", "ratings_edgelist.csv"
-        )
+        if dataset == Datasets.ML_SMALL:
+            edgelist_path = os.path.join(
+                get_root_dir(), "data", "ml-latest-small", "ratings_edgelist.csv"
+            )
+        elif dataset == Datasets.BLOG:
+            edgelist_path = os.path.join(get_root_dir(), "data", "blog", "edges.csv")
+        elif dataset == Datasets.PPI:
+            edgelist_path = os.path.join(get_root_dir(), "data", "ppi", "edges.csv")
+        else:
+            raise ValueError("Dataset not supported")
 
     graph = nx.read_edgelist(edgelist_path, delimiter=",")
 
