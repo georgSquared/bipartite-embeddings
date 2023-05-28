@@ -79,7 +79,6 @@ def streamify(graph: nx.Graph, batch_count: int = None):
 
 def main():
     graph = load_graph(dataset=Datasets.PPI)
-    from pudb import set_trace; set_trace()
 
     # roc_auc(graph)
     precision_at_100(graph)
