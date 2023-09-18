@@ -134,3 +134,31 @@ def cos_sim(a, b):
     norm_a = np.linalg.norm(a)
     norm_b = np.linalg.norm(b)
     return dot_product / (norm_a * norm_b)
+
+
+def get_top_100_non_edges(similarities, graph):
+    # Define a mask to filter out the upper triangular matrix
+    # (including the diagonal)
+    similarities = np.tril(similarities, k=-1)
+
+    # 100000 Arbitrary number of top indices. Should adjust dynamically
+    indices = np.argpartition(similarities.ravel(), -100000)[-100000:]
+    indices = indices[np.argsort(similarities.ravel()[indices])][::-1]
+    top_indices = np.unravel_index(indices, similarities.shape)
+
+    top_indices = list(zip(top_indices[0], top_indices[1]))
+
+    top_non_edges = []
+    for idx in top_indices:
+        if graph.has_edge(idx[0], idx[1]):
+            continue
+
+        top_non_edges.append(idx)
+
+        if len(top_non_edges) >= 100:
+            break
+
+    if len(top_non_edges) < 100:
+        raise ValueError("Not enough non edges")
+
+    return top_non_edges
