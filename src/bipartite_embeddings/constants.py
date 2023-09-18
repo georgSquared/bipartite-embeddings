@@ -16,3 +16,9 @@ class EdgeOperator(Enum):
     CONCAT = auto()
     HADAMARD = auto()
     AVERAGE = auto()
+
+
+class SimilarityMeasure(Enum):
+    COSINE = "cosine"
+    HAMMING = "hamming"
+    DOT_PRODUCT = "dot_product"

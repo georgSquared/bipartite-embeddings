@@ -4,14 +4,13 @@ from typing import Protocol, List
 import networkx as nx
 import numpy as np
 from numpy import ndarray
-from sklearn.metrics import roc_auc_score, jaccard_score
+from sklearn.metrics import roc_auc_score
 from sklearn.metrics.pairwise import cosine_similarity
 
-from bipartite_embeddings.constants import SampleType, EdgeOperator
+from bipartite_embeddings.constants import SampleType, EdgeOperator, SimilarityMeasure
 from bipartite_embeddings.utils import (
     get_train_test_samples,
     DotDict,
-    cos_sim,
     performance_measuring,
 )
 
@@ -102,7 +101,8 @@ class Evaluator:
                 for edge in samples
             ]
 
-        # This translates to using different node operations to compute the edge embeddings
+        # This translates to using different node operations
+        # to compute the edge embeddings
         # i.e. Cosine Similarity, Hadamard Product, Jaccard Distance, etc.
         elif self.embedding_operator == EdgeOperator.HADAMARD:
             return [
@@ -121,14 +121,15 @@ class Evaluator:
     def get_roc_auc_score(self) -> float:
         if not self.classifier or not self.embedding_operator:
             raise ValueError(
-                "ROC AUC score can only be computed when classifier and embedding operator are both set"
+                "ROC AUC score can only be computed when classifier and embedding operator are both set"  # noqa: E501
             )
 
         # Get the edge embeddings for the train Graph, and fit the classifier
         train_edge_embeddings = self.get_edge_embeddings(sample_type=SampleType.TRAIN)
         self.classifier.fit(train_edge_embeddings, self.samples.edge_labels_train)
 
-        # Get the edge embeddings for the test Graph, and predict the labels of the test data
+        # Get the edge embeddings for the test Graph,
+        # and predict the labels of the test data
         test_edge_embeddings = self.get_edge_embeddings(sample_type=SampleType.TEST)
         predictions = self.classifier.predict_proba(test_edge_embeddings)[:, 1]
 
@@ -137,42 +138,37 @@ class Evaluator:
 
         return score
 
-    def get_precision_at_100(self) -> float:
-        with performance_measuring(message="Node embeddings calculation") as t:
-            # Get full graph embeddings
-            node_embeddings = self.get_node_embeddings()
+    def get_precision_at_100(
+        self, similarity_measure: SimilarityMeasure = SimilarityMeasure.HAMMING
+    ) -> float:
+        with performance_measuring(message="Node embeddings calculation"):
+            node_embeddings = self.get_node_embeddings(sample_type=SampleType.TRAIN)
 
-        cosine_similarities = cosine_similarity(node_embeddings)
+        if similarity_measure == SimilarityMeasure.COSINE:
+            similarities = cosine_similarity(node_embeddings)
+        elif similarity_measure == SimilarityMeasure.HAMMING:
+            # This calculates distances instead of similarities
+            similarities = (node_embeddings[:, None, :] == node_embeddings).sum(2)
+        elif similarity_measure == SimilarityMeasure.DOT_PRODUCT:
+            similarities = np.dot(node_embeddings, node_embeddings.T)
 
-        # Define a mask to filter out the upper triangular matrix (including the diagonal)
-        only_lower_triangular = np.tril(cosine_similarities, k=-1)
+        else:
+            raise ValueError(f"Unknown similarity measure: {similarity_measure}")
 
-        # TODO: Understand what this does and use argpartition instead
-        # top100_indices = np.unravel_index(
-        #     np.argsort(only_lower_triangular.ravel())[-100:],
-        #     only_lower_triangular.shape,
-        # )
+        # Check with test edges
+        top_similarities = []
+        for edge in self.samples.edge_ids_test:
+            if edge[0] == edge[1] or edge[0] > edge[1]:
+                continue
 
-        indices = np.argpartition(only_lower_triangular.ravel(), -100)[-100:]
-        indices = indices[np.argsort(only_lower_triangular.ravel()[indices])][::-1]
-        top100_indices = np.unravel_index(indices, only_lower_triangular.shape)
+            edge_similarity = similarities[edge[0], edge[1]]
+            top_similarities.append((edge[0], edge[1], edge_similarity))
 
-        top100_indices = list(zip(top100_indices[0], top100_indices[1]))
-
-        # These are all 1.0 so something is wrong
-        # for idx in top100_indices:
-        #     print(f"Value at index: {idx} is {only_lower_triangular[idx[0], idx[1]]}")
+        top_similarities = sorted(top_similarities, key=lambda x: x[2], reverse=True)
 
         tp = 0
-        for idx in top100_indices:
-            # print(f"Node embedding for node {idx[0]}: {node_embeddings[idx[0]]}")
-            # print(f"Node embedding for node {idx[1]}: {node_embeddings[idx[1]]}")
-
-            if self.graph.has_edge(idx[0], idx[1]):
+        for edge in top_similarities[:100]:
+            if self.graph.has_edge(edge[0], edge[1]):
                 tp += 1
-                # print(f"Edge exists between {idx[0]} and {idx[1]}. TP: {tp}")
-            # else:
-                # print(f"No edge exists between {idx[0]} and {idx[1]}. TP: {tp}")
 
         return tp / 100
-

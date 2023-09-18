@@ -2,3 +2,6 @@
 /data/
 /.python-version
 __pycache__/
+.vscode/
+.venv/
+.ignore
