@@ -162,3 +162,34 @@ def get_top_100_non_edges(similarities, graph):
         raise ValueError("Not enough non edges")
 
     return top_non_edges
+
+
+# Bad name, it returns precision not edges
+def get_first_100_edges(similarities, original_graph, train_graph):
+    # Define a mask to filter out the upper triangular matrix
+    # (including the diagonal)
+    similarities = np.tril(similarities, k=-1)
+
+    # 100000 Arbitrary number of top indices. Should adjust dynamically
+    indices = np.argpartition(similarities.ravel(), -100000)[-100000:]
+    indices = indices[np.argsort(similarities.ravel()[indices])][::-1]
+    top_indices = np.unravel_index(indices, similarities.shape)
+
+    top_indices = list(zip(top_indices[0], top_indices[1]))
+
+    traversed_count = 0
+    tp = 0
+
+    for idx in top_indices:
+        # Only consider edges that are not in the train graph
+        if train_graph.has_edge(idx[0], idx[1]):
+            continue
+
+        traversed_count += 1
+        if original_graph.has_edge(idx[0], idx[1]):
+            tp += 1
+
+        if tp >= 100:
+            break
+
+    return tp / traversed_count

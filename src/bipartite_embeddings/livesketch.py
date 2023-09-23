@@ -3,11 +3,14 @@ This module contains our custom embedding model
 
 The name is a placeholder
 """
+import json
 import random
+from typing import Union
 
 import networkx as nx
 import numpy as np
-from simhash import Simhash
+
+from local_simhash import CustomSimhash
 
 
 class Livesketch:
@@ -19,10 +22,20 @@ class Livesketch:
         self,
         dimensions: int = 32,
         seed: int = 42,
+        random_walk_length: Union[int, None] = None,
+        use_page_rank: bool = False,
     ):
         self.dimensions = dimensions
         self._sketch = None
         self.seed = seed
+        self.hash_signatures = {}
+
+        if random_walk_length and use_page_rank:
+            raise ValueError("You can only use one of random walk length and page rank")
+
+        self.random_walk_length = random_walk_length
+        self.number_of_walks = 1000
+        self.use_page_rank = use_page_rank
 
     def _set_seed(self):
         """
@@ -65,16 +78,44 @@ class Livesketch:
         """
         Get the features of a node
         """
+        if self.use_page_rank:
+            # json.loads(json.dumps()) is used to convert keys to str fast
+            neighbor_weights = json.loads(
+                json.dumps(nx.pagerank(self._graph, personalization={node: 1}))
+            )
+
+            return neighbor_weights
+
+        if self.random_walk_length:
+            neighbor_weights = {}
+
+            for walk in range(self.number_of_walks):
+                current = node
+
+                for step in range(self.random_walk_length):
+                    neighbors = [
+                        neighbor for neighbor in self._graph.neighbors(current)
+                    ]
+                    current = random.choice(neighbors)
+
+                    if current not in neighbor_weights:
+                        neighbor_weights[current] = 1
+
+                    else:
+                        neighbor_weights[current] += 1
+
+            # json.loads(json.dumps()) is used to convert keys to str fast
+            return json.loads(json.dumps(neighbor_weights))
+
         return [str(neighbor) for neighbor in self._graph.neighbors(node)]
 
     def generate_sketch(self):
         sketch = []
 
         for node in self._graph:
-            int_simhash = Simhash(
-                self._get_node_features(node), f=self.dimensions
-            ).value
+            simhash = CustomSimhash(self._get_node_features(node), f=self.dimensions)
 
+            int_simhash = simhash.value
             binary_simhash = format(int_simhash, "b")
 
             # Pad with zeros
@@ -83,11 +124,55 @@ class Livesketch:
                     "0" * (self.dimensions - len(binary_simhash)) + binary_simhash
                 )
 
+            self.hash_signatures[node] = simhash.sums
+
             sketch.append([int(bit) for bit in binary_simhash])
 
         self._sketch = sketch
 
-    def fit(self, graph):
+    def update_sketch(self, edge):
+        """
+        Update the sketch with a new edge
+        """
+        node1, node2 = edge
+
+        # Update values for node1
+        node1_hash = self.hash_signatures[node1]
+        updated_simhash = CustomSimhash(
+            [str(node2)], f=self.dimensions, sums=node1_hash
+        )
+
+        int_simhash = updated_simhash.value
+        binary_simhash = format(int_simhash, "b")
+
+        # Pad with zeros
+        if len(binary_simhash) < self.dimensions:
+            binary_simhash = (
+                "0" * (self.dimensions - len(binary_simhash)) + binary_simhash
+            )
+
+        self._sketch[node1] = [int(bit) for bit in binary_simhash]
+        self.hash_signatures[node1] = updated_simhash.sums
+
+        # Update values for node2
+        node2_hash = self.hash_signatures[node2]
+        updated_simhash = CustomSimhash(
+            [str(node1)], f=self.dimensions, sums=node2_hash
+        )
+
+        int_simhash = updated_simhash.value
+        binary_simhash = format(int_simhash, "b")
+
+        # Pad with zeros
+        if len(binary_simhash) < self.dimensions:
+            binary_simhash = (
+                "0" * (self.dimensions - len(binary_simhash)) + binary_simhash
+            )
+
+        self._sketch[node2] = [int(bit) for bit in binary_simhash]
+        self.hash_signatures[node2] = updated_simhash.sums
+
+    def fit(self, graph: nx.Graph, updated_neighbours: dict = None):
         """
         Fit the Livesketch model on a given graph
         """
@@ -96,7 +181,16 @@ class Livesketch:
         graph = self._check_graph(graph)
         self._graph = graph
 
-        self.generate_sketch()
+        if not self._sketch:
+            self.generate_sketch()
+
+        if not updated_neighbours:
+            return
+
+        # Update the sketch with the new edges
+        for node, neighbours in updated_neighbours.items():
+            for neighbour in neighbours:
+                self.update_sketch((node, neighbour))
 
     def get_embedding(self):
         """
