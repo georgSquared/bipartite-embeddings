@@ -1,4 +1,3 @@
-from collections import defaultdict
 import typing
 from typing import Protocol, List
 
@@ -10,7 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from bipartite_embeddings.constants import SampleType, EdgeOperator, SimilarityMeasure
 from bipartite_embeddings.utils import (
-    get_first_100_edges,
+    get_first_100_edges_precision,
     get_train_test_samples,
     DotDict,
     performance_measuring,
@@ -168,25 +167,9 @@ class Evaluator:
         # Get the similarity matrix
         similarities = self.get_similarity_matrix(node_embeddings, similarity_measure)
 
-        return get_first_100_edges(similarities, self.graph, self.samples.G_train)
-
-        # # Check with the test edges
-        # top_similarities = []
-        # for edge in self.samples.edge_ids_test:
-        #     if edge[0] == edge[1] or edge[0] > edge[1]:
-        #         continue
-
-        #     edge_similarity = similarities[edge[0], edge[1]]
-        #     top_similarities.append((edge[0], edge[1], edge_similarity))
-
-        # top_similarities = sorted(top_similarities, key=lambda x: x[2], reverse=True)
-
-        # tp = 0
-        # for edge in top_similarities[:100]:
-        #     if self.graph.has_edge(edge[0], edge[1]):
-        #         tp += 1
-
-        # return tp / 100
+        return get_first_100_edges_precision(
+            similarities, self.graph, self.samples.G_train
+        )
 
 
 class StreamingEvaluator:
@@ -206,7 +189,7 @@ class StreamingEvaluator:
         self.reduced_graph = reduced_graph
         self.stream_edge_ids = stream_edge_ids
         self.stream_edge_labels = stream_edge_labels
-        self.updated_neighbours = defaultdict(list)
+        self.added_edges = []
 
     def get_similarity_matrix(
         self, embeddings: ndarray, similarity_measure: SimilarityMeasure
@@ -224,13 +207,12 @@ class StreamingEvaluator:
 
         return similarities
 
-    def get_node_embeddings(self, updated_neighbours: dict = None) -> ndarray:
+    def get_node_embeddings(self, added_edges: list = None) -> ndarray:
         try:
-            self.embedding_model.fit(
-                self.samples.G_train, updated_neighbours=updated_neighbours
-            )
-        except TypeError:
+            self.embedding_model.fit(self.samples.G_train, added_edges=added_edges)
+        except TypeError as ex:
             print("Model does not support updates. Fitting from scratch")
+            raise ex
             self.embedding_model.fit(self.samples.G_train)
 
         return self.embedding_model.get_embedding()
@@ -238,13 +220,11 @@ class StreamingEvaluator:
     def get_precision_at_100(
         self,
         similarity_measure: SimilarityMeasure = SimilarityMeasure.HAMMING,
-        updated_neighbours: dict = None,
+        added_edges: list = None,
     ) -> float:
         # Get the node embeddings for the train Graph
         with performance_measuring(message="Node embeddings calculation"):
-            node_embeddings = self.get_node_embeddings(
-                updated_neighbours=updated_neighbours
-            )
+            node_embeddings = self.get_node_embeddings(added_edges=added_edges)
 
         with performance_measuring(message="Metric calculation"):
             # Get the similarity matrix
@@ -252,36 +232,9 @@ class StreamingEvaluator:
                 node_embeddings, similarity_measure
             )
 
-            return get_first_100_edges(similarities, self.graph, self.samples.G_train)
-
-            # # Check with the top 100 similarity scores of non-edges
-            # top_non_edges = get_top_100_non_edges(similarities, self.samples.G_train)
-            # tp = 0
-            # for edge in top_non_edges:
-            #     if self.graph.has_edge(edge[0], edge[1]):
-            #         tp += 1
-
-            # return tp / 100
-
-            # Check with the test edges
-            top_similarities = []
-            for edge in self.samples.edge_ids_test:
-                if edge[0] == edge[1] or edge[0] > edge[1]:
-                    continue
-
-                edge_similarity = similarities[edge[0], edge[1]]
-                top_similarities.append((edge[0], edge[1], edge_similarity))
-
-            top_similarities = sorted(
-                top_similarities, key=lambda x: x[2], reverse=True
+            return get_first_100_edges_precision(
+                similarities, self.graph, self.samples.G_train
             )
-
-            tp = 0
-            for edge in top_similarities[:100]:
-                if self.graph.has_edge(edge[0], edge[1]):
-                    tp += 1
-
-            return tp / 100
 
     def streamify(self, batch_count: int = None):
         print(f"Inital precision@100: {self.get_precision_at_100()} \n")
@@ -294,13 +247,11 @@ class StreamingEvaluator:
 
             added_edge_count += 1
             self.samples.G_train.add_edge(edge[0], edge[1])
-            self.updated_neighbours[edge[0]].append(edge[1])
+            self.added_edges.append(edge)
 
             if batch_count:
                 if added_edge_count % batch_count == 0:
-                    precision = self.get_precision_at_100(
-                        updated_neighbours=self.updated_neighbours,
-                    )
+                    precision = self.get_precision_at_100(added_edges=self.added_edges)
 
                     print(
                         f"Graph edge count: {self.samples.G_train.number_of_edges()}."
@@ -308,19 +259,17 @@ class StreamingEvaluator:
                     print(f"Precision@100: {precision}")
                     print()
 
-                    # Reset the updated neighbours
-                    self.updated_neighbours = defaultdict(list)
+                    # Reset the added edges
+                    self.added_edges = []
 
                 continue
 
             else:
-                precision = self.get_precision_at_100(
-                    updated_neighbours=self.updated_neighbours,
-                )
+                precision = self.get_precision_at_100(added_edges=self.added_edges)
 
                 print(f"Graph edge count: {self.samples.G_train.number_of_edges()}.")
                 print(f"Precision@100: {precision}")
                 print()
 
-                # Reset the updated neighbours
-                self.updated_neighbours = defaultdict(list)
+                # Reset the added edges
+                self.added_edges = []

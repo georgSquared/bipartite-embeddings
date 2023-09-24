@@ -165,7 +165,7 @@ def get_top_100_non_edges(similarities, graph):
 
 
 # Bad name, it returns precision not edges
-def get_first_100_edges(similarities, original_graph, train_graph):
+def get_first_100_edges_precision(similarities, original_graph, train_graph):
     # Define a mask to filter out the upper triangular matrix
     # (including the diagonal)
     similarities = np.tril(similarities, k=-1)
@@ -193,3 +193,34 @@ def get_first_100_edges(similarities, original_graph, train_graph):
             break
 
     return tp / traversed_count
+
+
+def get_test_edges_precision(similarities, test_edges, graph):
+    # Check with the test edges
+    top_similarities = []
+    for edge in test_edges:
+        if edge[0] == edge[1] or edge[0] > edge[1]:
+            continue
+
+        edge_similarity = similarities[edge[0], edge[1]]
+        top_similarities.append((edge[0], edge[1], edge_similarity))
+
+    top_similarities = sorted(top_similarities, key=lambda x: x[2], reverse=True)
+
+    tp = 0
+    for edge in top_similarities[:100]:
+        if graph.has_edge(edge[0], edge[1]):
+            tp += 1
+
+    return tp / 100
+
+
+def get_top_similarity_precision(similarities, original_graph, train_graph):
+    # Check with the top 100 similarity scores of non-edges
+    top_non_edges = get_top_100_non_edges(similarities, train_graph)
+    tp = 0
+    for edge in top_non_edges:
+        if original_graph.has_edge(edge[0], edge[1]):
+            tp += 1
+
+    return tp / 100

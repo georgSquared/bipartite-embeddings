@@ -59,17 +59,20 @@ def streamify(graph: nx.Graph, model: EmbeddingModel, batch_count: int = None):
     evaluator.streamify(batch_count=batch_count)
 
 
-def run_full_graph(graph: nx.Graph, model: EmbeddingModel, iterations=10):
+def run_full_graph(
+    graph: nx.Graph, model_class: EmbeddingModel, model_args: dict, iterations=10
+):
     results = 0
     for i in range(iterations):
-        precision = precision_at_100(
-            graph,
-            embedding_model=model,
+        model = model_class(**model_args)
+
+        evaluator = Evaluator(graph, model)
+        pr100 = evaluator.get_precision_at_100(
             similarity_measure=SimilarityMeasure.HAMMING,
         )
 
-        print(f"Iteration: {i}. Precision@100: {precision}")
-        results += precision
+        print(f"Iteration: {i}. Precision@100: {pr100}")
+        results += pr100
 
     print(f"Average precision@100: {results / 10}")
 
@@ -78,17 +81,21 @@ def main():
     graph = load_graph(dataset=Datasets.PPI)
 
     models = [
-        Livesketch(dimensions=32),
-        NodeSketch(dimensions=32, decay=0.4, iterations=2),
-        Node2Vec(),
-        Livesketch(dimensions=32, use_page_rank=True),
-        Livesketch(dimensions=32, random_walk_length=3),
+        (Livesketch, dict(dimensions=32)),
+        (NodeSketch, dict(dimensions=32, decay=0.4, iterations=2)),
+        (Node2Vec, dict()),
+        (Livesketch, dict(dimensions=32, use_page_rank=True)),
+        (
+            Livesketch,
+            dict(dimensions=32, random_walk_length=3, number_of_walks=1000),
+        ),
     ]
+    model_index = 4
 
-    # TODO: Fix iterations, they reuse the same model and it auto-updates
-    # run_full_graph(graph, models[4], iterations=10)
+    # run_full_graph(graph, models[model_index][0], models[model_index][1], iterations=10)
 
-    streamify(graph, model=models[4], batch_count=1000)
+    model = models[model_index][0](**models[model_index][1])
+    streamify(graph, model=model, batch_count=1000)
 
 
 if __name__ == "__main__":

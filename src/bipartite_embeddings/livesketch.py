@@ -3,7 +3,6 @@ This module contains our custom embedding model
 
 The name is a placeholder
 """
-import json
 import random
 from typing import Union
 
@@ -23,18 +22,20 @@ class Livesketch:
         dimensions: int = 32,
         seed: int = 42,
         random_walk_length: Union[int, None] = None,
+        number_of_walks: int = 1000,
         use_page_rank: bool = False,
     ):
         self.dimensions = dimensions
         self._sketch = None
         self.seed = seed
         self.hash_signatures = {}
+        self.neighborhoods = {}
 
         if random_walk_length and use_page_rank:
             raise ValueError("You can only use one of random walk length and page rank")
 
         self.random_walk_length = random_walk_length
-        self.number_of_walks = 1000
+        self.number_of_walks = number_of_walks
         self.use_page_rank = use_page_rank
 
     def _set_seed(self):
@@ -79,12 +80,12 @@ class Livesketch:
         Get the features of a node
         """
         if self.use_page_rank:
-            # json.loads(json.dumps()) is used to convert keys to str fast
-            neighbor_weights = json.loads(
-                json.dumps(nx.pagerank(self._graph, personalization={node: 1}))
-            )
+            neighbor_weights = nx.pagerank(self._graph, personalization={node: 1})
+            normalized_neighbor_weights = {
+                str(k): v for k, v in neighbor_weights.items()
+            }
 
-            return neighbor_weights
+            return normalized_neighbor_weights
 
         if self.random_walk_length:
             neighbor_weights = {}
@@ -104,8 +105,13 @@ class Livesketch:
                     else:
                         neighbor_weights[current] += 1
 
-            # json.loads(json.dumps()) is used to convert keys to str fast
-            return json.loads(json.dumps(neighbor_weights))
+            # Convert keys to str fast
+            normalized_neighbor_weights = {
+                str(k): v for k, v in neighbor_weights.items()
+            }
+            self.neighborhoods[node] = normalized_neighbor_weights
+
+            return normalized_neighbor_weights
 
         return [str(neighbor) for neighbor in self._graph.neighbors(node)]
 
@@ -130,10 +136,7 @@ class Livesketch:
 
         self._sketch = sketch
 
-    def update_sketch(self, edge):
-        """
-        Update the sketch with a new edge
-        """
+    def _update_simple_simhash(self, edge):
         node1, node2 = edge
 
         # Update values for node1
@@ -160,6 +163,11 @@ class Livesketch:
             [str(node1)], f=self.dimensions, sums=node2_hash
         )
 
+        # For random walk, we need to update the node features
+        updated_simhash = CustomSimhash(
+            self._get_node_features(node2), f=self.dimensions
+        )
+
         int_simhash = updated_simhash.value
         binary_simhash = format(int_simhash, "b")
 
@@ -172,7 +180,94 @@ class Livesketch:
         self._sketch[node2] = [int(bit) for bit in binary_simhash]
         self.hash_signatures[node2] = updated_simhash.sums
 
-    def fit(self, graph: nx.Graph, updated_neighbours: dict = None):
+    def _update_page_rank(self, edge):
+        node1, node2 = edge
+
+        updated_simhash = CustomSimhash(
+            self._get_node_features(node1), f=self.dimensions
+        )
+        int_simhash = updated_simhash.value
+        binary_simhash = format(int_simhash, "b")
+
+        # Pad with zeros
+        if len(binary_simhash) < self.dimensions:
+            binary_simhash = (
+                "0" * (self.dimensions - len(binary_simhash)) + binary_simhash
+            )
+
+        self._sketch[node2] = [int(bit) for bit in binary_simhash]
+
+        updated_simhash = CustomSimhash(
+            self._get_node_features(node2), f=self.dimensions
+        )
+        int_simhash = updated_simhash.value
+        binary_simhash = format(int_simhash, "b")
+
+        # Pad with zeros
+        if len(binary_simhash) < self.dimensions:
+            binary_simhash = (
+                "0" * (self.dimensions - len(binary_simhash)) + binary_simhash
+            )
+
+        self._sketch[node2] = [int(bit) for bit in binary_simhash]
+
+    def _update_random_walk(self, edges):
+        nodes_to_update = set()
+        for edge in edges:
+            node1, node2 = edge
+
+            for node, neighborood in self.neighborhoods.items():
+                if str(node1) in neighborood.keys() or str(node2) in neighborood.keys():
+                    # Skip nodes that have a weight less than half of the number of walks
+                    weight_limit = int(self.number_of_walks * 0.5)
+                    if (
+                        neighborood.get(str(node1), 0) < weight_limit
+                        and neighborood.get(str(node2), 0) < weight_limit
+                    ):
+                        continue
+
+                    nodes_to_update.add(node)
+
+        print(f"Updating simhash for number of nodes: {len(nodes_to_update)}")
+        for node in nodes_to_update:
+            updated_simhash = CustomSimhash(
+                self._get_node_features(node), f=self.dimensions
+            )
+            int_simhash = updated_simhash.value
+            binary_simhash = format(int_simhash, "b")
+
+            # Pad with zeros
+            if len(binary_simhash) < self.dimensions:
+                binary_simhash = (
+                    "0" * (self.dimensions - len(binary_simhash)) + binary_simhash
+                )
+
+            self._sketch[node] = [int(bit) for bit in binary_simhash]
+
+        return
+
+    def update_sketch(self, edges: list):
+        """
+        Update the sketch with the added edges
+        """
+        # Page rank case
+        if self.use_page_rank:
+            for edge in edges:
+                self._update_page_rank()
+
+            return
+
+        # Random walk case
+        if self.random_walk_length:
+            self._update_random_walk(edges)
+
+            return
+
+        # Simple simhash case
+        for edge in edges:
+            self._update_simple_simhash(edge)
+
+    def fit(self, graph: nx.Graph, added_edges: list = None):
         """
         Fit the Livesketch model on a given graph
         """
@@ -184,13 +279,8 @@ class Livesketch:
         if not self._sketch:
             self.generate_sketch()
 
-        if not updated_neighbours:
-            return
-
-        # Update the sketch with the new edges
-        for node, neighbours in updated_neighbours.items():
-            for neighbour in neighbours:
-                self.update_sketch((node, neighbour))
+        if added_edges:
+            self.update_sketch(added_edges)
 
     def get_embedding(self):
         """
