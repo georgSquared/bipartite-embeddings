@@ -9,10 +9,13 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from bipartite_embeddings.constants import SampleType, EdgeOperator, SimilarityMeasure
 from bipartite_embeddings.utils import (
+    get_first_100_edges_precision,
     get_train_test_samples,
     DotDict,
     performance_measuring,
 )
+
+from stellargraph.data import EdgeSplitter
 
 
 class EmbeddingModel(Protocol):
@@ -118,6 +121,22 @@ class Evaluator:
 
         raise ValueError(f"Unknown edge operator: {self.embedding_operator}")
 
+    def get_similarity_matrix(
+        self, embeddings: ndarray, similarity_measure: SimilarityMeasure
+    ) -> ndarray:
+        if similarity_measure == SimilarityMeasure.COSINE:
+            similarities = cosine_similarity(embeddings)
+        elif similarity_measure == SimilarityMeasure.HAMMING:
+            # This calculates distances instead of similarities
+            similarities = (embeddings[:, None, :] == embeddings).sum(2)
+        elif similarity_measure == SimilarityMeasure.DOT_PRODUCT:
+            similarities = np.dot(embeddings, embeddings.T)
+
+        else:
+            raise ValueError(f"Unknown similarity measure: {similarity_measure}")
+
+        return similarities
+
     def get_roc_auc_score(self) -> float:
         if not self.classifier or not self.embedding_operator:
             raise ValueError(
@@ -141,34 +160,116 @@ class Evaluator:
     def get_precision_at_100(
         self, similarity_measure: SimilarityMeasure = SimilarityMeasure.HAMMING
     ) -> float:
+        # Get the node embeddings for the train Graph
         with performance_measuring(message="Node embeddings calculation"):
             node_embeddings = self.get_node_embeddings(sample_type=SampleType.TRAIN)
 
+        # Get the similarity matrix
+        similarities = self.get_similarity_matrix(node_embeddings, similarity_measure)
+
+        return get_first_100_edges_precision(
+            similarities, self.graph, self.samples.G_train
+        )
+
+
+class StreamingEvaluator:
+    def __init__(
+        self,
+        graph: nx.Graph,
+        embedding_model: EmbeddingModel,
+    ):
+        self.graph = graph
+        self.embedding_model = embedding_model
+        self.samples = get_train_test_samples(self.graph)
+
+        reduced_graph, stream_edge_ids, stream_edge_labels = EdgeSplitter(
+            self.samples.G_train
+        ).train_test_split(p=0.5, method="global", keep_connected=True)
+
+        self.reduced_graph = reduced_graph
+        self.stream_edge_ids = stream_edge_ids
+        self.stream_edge_labels = stream_edge_labels
+        self.added_edges = []
+
+    def get_similarity_matrix(
+        self, embeddings: ndarray, similarity_measure: SimilarityMeasure
+    ) -> ndarray:
         if similarity_measure == SimilarityMeasure.COSINE:
-            similarities = cosine_similarity(node_embeddings)
+            similarities = cosine_similarity(embeddings)
         elif similarity_measure == SimilarityMeasure.HAMMING:
             # This calculates distances instead of similarities
-            similarities = (node_embeddings[:, None, :] == node_embeddings).sum(2)
+            similarities = (embeddings[:, None, :] == embeddings).sum(2)
         elif similarity_measure == SimilarityMeasure.DOT_PRODUCT:
-            similarities = np.dot(node_embeddings, node_embeddings.T)
+            similarities = np.dot(embeddings, embeddings.T)
 
         else:
             raise ValueError(f"Unknown similarity measure: {similarity_measure}")
 
-        # Check with test edges
-        top_similarities = []
-        for edge in self.samples.edge_ids_test:
-            if edge[0] == edge[1] or edge[0] > edge[1]:
+        return similarities
+
+    def get_node_embeddings(self, added_edges: list = None) -> ndarray:
+        try:
+            self.embedding_model.fit(self.samples.G_train, added_edges=added_edges)
+        except TypeError as ex:
+            print("Model does not support updates. Fitting from scratch")
+            raise ex
+            self.embedding_model.fit(self.samples.G_train)
+
+        return self.embedding_model.get_embedding()
+
+    def get_precision_at_100(
+        self,
+        similarity_measure: SimilarityMeasure = SimilarityMeasure.HAMMING,
+        added_edges: list = None,
+    ) -> float:
+        # Get the node embeddings for the train Graph
+        with performance_measuring(message="Node embeddings calculation"):
+            node_embeddings = self.get_node_embeddings(added_edges=added_edges)
+
+        with performance_measuring(message="Metric calculation"):
+            # Get the similarity matrix
+            similarities = self.get_similarity_matrix(
+                node_embeddings, similarity_measure
+            )
+
+            return get_first_100_edges_precision(
+                similarities, self.graph, self.samples.G_train
+            )
+
+    def streamify(self, batch_count: int = None):
+        print(f"Inital precision@100: {self.get_precision_at_100()} \n")
+        print("Starting stream \n")
+
+        added_edge_count = 0
+        for edge in self.stream_edge_ids:
+            if self.samples.G_train.has_edge(edge[0], edge[1]):
                 continue
 
-            edge_similarity = similarities[edge[0], edge[1]]
-            top_similarities.append((edge[0], edge[1], edge_similarity))
+            added_edge_count += 1
+            self.samples.G_train.add_edge(edge[0], edge[1])
+            self.added_edges.append(edge)
 
-        top_similarities = sorted(top_similarities, key=lambda x: x[2], reverse=True)
+            if batch_count:
+                if added_edge_count % batch_count == 0:
+                    precision = self.get_precision_at_100(added_edges=self.added_edges)
 
-        tp = 0
-        for edge in top_similarities[:100]:
-            if self.graph.has_edge(edge[0], edge[1]):
-                tp += 1
+                    print(
+                        f"Graph edge count: {self.samples.G_train.number_of_edges()}."
+                    )
+                    print(f"Precision@100: {precision}")
+                    print()
 
-        return tp / 100
+                    # Reset the added edges
+                    self.added_edges = []
+
+                continue
+
+            else:
+                precision = self.get_precision_at_100(added_edges=self.added_edges)
+
+                print(f"Graph edge count: {self.samples.G_train.number_of_edges()}.")
+                print(f"Precision@100: {precision}")
+                print()
+
+                # Reset the added edges
+                self.added_edges = []

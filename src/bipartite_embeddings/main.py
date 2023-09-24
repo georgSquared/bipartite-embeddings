@@ -1,12 +1,11 @@
 import networkx as nx
 
 from sklearn.linear_model import LogisticRegressionCV
-from stellargraph.data import EdgeSplitter
 from livesketch import Livesketch
 from utils import Datasets, load_graph
 
 from bipartite_embeddings.constants import EdgeOperator, SimilarityMeasure
-from bipartite_embeddings.evaluator import EmbeddingModel, Evaluator
+from bipartite_embeddings.evaluator import EmbeddingModel, Evaluator, StreamingEvaluator
 
 from karateclub.node_embedding.neighbourhood.nodesketch import NodeSketch
 from karateclub.node_embedding.neighbourhood.node2vec import Node2Vec
@@ -42,7 +41,7 @@ def precision_at_100(
     return pr100
 
 
-def streamify(graph: nx.Graph, batch_count: int = None):
+def streamify(graph: nx.Graph, model: EmbeddingModel, batch_count: int = None):
     """
     Simulate a stream of edges by splitting the graph into a base 50% starting graph and
     a stream of 50% edges.
@@ -52,74 +51,51 @@ def streamify(graph: nx.Graph, batch_count: int = None):
 
     The edges are added one by one to the base graph
     """
-    reduced_graph, stream_edge_ids, stream_edge_labels = EdgeSplitter(
-        graph
-    ).train_test_split(p=0.5, method="global", keep_connected=True)
+    evaluator = StreamingEvaluator(
+        graph=graph,
+        embedding_model=model,
+    )
 
-    added_edge_count = 0
-    for idx, edge in enumerate(stream_edge_ids):
-        added_edge_count += 1
-
-        if stream_edge_labels[idx] == 1:
-            reduced_graph.add_edge(edge[0], edge[1])
-        else:
-            continue
-
-        if batch_count:
-            if added_edge_count % batch_count == 0:
-                evaluator = Evaluator(
-                    reduced_graph,
-                    Livesketch(dimensions=32),
-                    classifier=LogisticRegressionCV(
-                        Cs=10, cv=10, scoring="roc_auc", max_iter=10000
-                    ),
-                    embedding_operator=EdgeOperator.CONCAT,
-                )
-
-                print(f"Graph edge count: {reduced_graph.number_of_edges()}.")
-                print(f"ROC AUC score: {evaluator.get_roc_auc_score()}")
-
-            continue
-
-        else:
-            evaluator = Evaluator(
-                reduced_graph,
-                Livesketch(dimensions=32),
-                classifier=LogisticRegressionCV(
-                    Cs=10, cv=10, scoring="roc_auc", max_iter=10000
-                ),
-                embedding_operator=EdgeOperator.CONCAT,
-            )
-
-            print(f"Graph edge count: {reduced_graph.number_of_edges()}")
-
-            print(f"ROC AUC score: {evaluator.get_roc_auc_score()}")
+    evaluator.streamify(batch_count=batch_count)
 
 
-def main():
-    graph = load_graph(dataset=Datasets.BLOG)
-
-    models = [
-        Livesketch(dimensions=32),
-        NodeSketch(dimensions=32, decay=0.4, iterations=4),
-        Node2Vec(),
-    ]
-
-    # roc_auc(graph)
-    # streamify(graph, batch_count=100)
-
+def run_full_graph(
+    graph: nx.Graph, model_class: EmbeddingModel, model_args: dict, iterations=10
+):
     results = 0
-    for i in range(10):
-        precision = precision_at_100(
-            graph,
-            embedding_model=models[0],
+    for i in range(iterations):
+        model = model_class(**model_args)
+
+        evaluator = Evaluator(graph, model)
+        pr100 = evaluator.get_precision_at_100(
             similarity_measure=SimilarityMeasure.HAMMING,
         )
 
-        print(f"Iteration: {i}. Precision@100: {precision}")
-        results += precision
+        print(f"Iteration: {i}. Precision@100: {pr100}")
+        results += pr100
 
     print(f"Average precision@100: {results / 10}")
+
+
+def main():
+    graph = load_graph(dataset=Datasets.PPI)
+
+    models = [
+        (Livesketch, dict(dimensions=32)),
+        (NodeSketch, dict(dimensions=32, decay=0.4, iterations=2)),
+        (Node2Vec, dict()),
+        (Livesketch, dict(dimensions=32, use_page_rank=True)),
+        (
+            Livesketch,
+            dict(dimensions=32, random_walk_length=3, number_of_walks=1000),
+        ),
+    ]
+    model_index = 4
+
+    # run_full_graph(graph, models[model_index][0], models[model_index][1], iterations=10)
+
+    model = models[model_index][0](**models[model_index][1])
+    streamify(graph, model=model, batch_count=1000)
 
 
 if __name__ == "__main__":
