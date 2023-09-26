@@ -307,14 +307,16 @@ def top_hamming_similarity_chunked(
 
     for i in tqdm(range(0, n, chunk_size)):
         end_i = min(i + chunk_size, n)
-        for j in range(0, n, chunk_size):
+        for j in range(i, n, chunk_size):  # Start from 'i'
             end_j = min(j + chunk_size, n)
 
             dot_product = X[i:end_i] @ X[j:end_j].T
             dot_product = dot_product.todense()
 
             for ix in range(dot_product.shape[0]):
-                for jx in range(dot_product.shape[1]):
+                # Adjust the start of the inner loop based on the current chunk pair
+                start_jx = ix if i == j else 0
+                for jx in range(start_jx, dot_product.shape[1]):
                     similarity = dot_product[ix, jx] + (
                         L - (row_sums[i + ix] + row_sums[j + jx] - dot_product[ix, jx])
                     )
