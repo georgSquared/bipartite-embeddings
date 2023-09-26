@@ -66,17 +66,68 @@ def tranform_ppi_to_edgelist():
         nx.write_edgelist(graph, edges_file, data=False, delimiter=",")
 
 
+def transform_wiki_to_edgelist():
+    mat_file = os.path.join(ROOT_DIR, "data", "wiki", "POS.mat")
+    mat = sio.loadmat(mat_file)
+    graph = nx.from_scipy_sparse_matrix(mat["network"])
+
+    with open(os.path.join(ROOT_DIR, "data", "wiki", "edges.csv"), "wb") as edges_file:
+        nx.write_edgelist(graph, edges_file, data=False, delimiter=",")
+
+
+def transform_dblp_to_edgelist():
+    graph = nx.read_edgelist(
+        os.path.join(ROOT_DIR, "data", "dblp", "com-dblp.ungraph.txt")
+    )
+
+    # Re-write the edgelist as a csv for unified edges form
+    nx.write_edgelist(
+        graph,
+        os.path.join(ROOT_DIR, "data", "dblp", "edges.csv"),
+        delimiter=",",
+        data=False,
+    )
+
+
+def transform_youtube_to_edgelist():
+    graph = nx.read_edgelist(
+        os.path.join(ROOT_DIR, "data", "youtube", "com-youtube.ungraph.txt")
+    )
+
+    # Re-write the edgelist as a csv for unified edges form
+    nx.write_edgelist(
+        graph,
+        os.path.join(ROOT_DIR, "data", "youtube", "edges.csv"),
+        delimiter=",",
+        data=False,
+    )
+
+
+def transform_livejournal_to_edgelist():
+    graph = nx.read_edgelist(
+        os.path.join(ROOT_DIR, "data", "livejournal", "com-lj.ungraph.txt")
+    )
+
+    # Re-write the edgelist as a csv for unified edges form
+    nx.write_edgelist(
+        graph,
+        os.path.join(ROOT_DIR, "data", "livejournal", "edges.csv"),
+        delimiter=",",
+        data=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Fetch and transform MovieLens data to an edgelist"
+        description="Fetch and transform selected dataset to an edgelist"
     )
 
     # Add an argument to load the specified dataset, default to ml-small
     parser.add_argument(
         "-d",
         "--dataset",
-        choices=["ml-small", "blog", "ppi"],
-        default="ml-small",
+        choices=["ml-small", "blog", "ppi", "wiki", "dblp", "youtube", "livejournal"],
+        required=True,
         help="Dataset to load",
     )
     parser.add_argument("-f", "--fetch", action="store_true")
@@ -96,6 +147,18 @@ def main():
 
     elif args.dataset == "ppi":
         tranform_ppi_to_edgelist()
+
+    elif args.dataset == "wiki":
+        transform_wiki_to_edgelist()
+
+    elif args.dataset == "dblp":
+        transform_dblp_to_edgelist()
+
+    elif args.dataset == "youtube":
+        transform_youtube_to_edgelist()
+
+    elif args.dataset == "livejournal":
+        transform_livejournal_to_edgelist()
 
 
 if __name__ == "__main__":
