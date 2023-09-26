@@ -74,28 +74,28 @@ def run_full_graph(
         print(f"Iteration: {i}. Precision@100: {pr100}")
         results += pr100
 
-    print(f"Average precision@100: {results / 10}")
+    print(f"Average precision@100: {results / iterations}")
 
 
 def main():
-    graph = load_graph(dataset=Datasets.PPI)
+    graph = load_graph(dataset=Datasets.DBLP)
 
     models = [
-        (Livesketch, dict(dimensions=32)),
-        (NodeSketch, dict(dimensions=32, decay=0.4, iterations=2)),
+        (Livesketch, dict(dimensions=128)),
+        (NodeSketch, dict(dimensions=128, decay=0.4, iterations=2)),
         (Node2Vec, dict()),
-        (Livesketch, dict(dimensions=32, use_page_rank=True)),
+        (Livesketch, dict(dimensions=128, use_page_rank=True)),
         (
             Livesketch,
-            dict(dimensions=32, random_walk_length=3, number_of_walks=1000),
+            dict(dimensions=128, random_walk_length=3, number_of_walks=500),
         ),
     ]
     model_index = 4
 
-    # run_full_graph(graph, models[model_index][0], models[model_index][1], iterations=10)
+    run_full_graph(graph, models[model_index][0], models[model_index][1], iterations=1)
 
-    model = models[model_index][0](**models[model_index][1])
-    streamify(graph, model=model, batch_count=1000)
+    # model = models[model_index][0](**models[model_index][1])
+    # streamify(graph, model=model, batch_count=1000)
 
 
 if __name__ == "__main__":

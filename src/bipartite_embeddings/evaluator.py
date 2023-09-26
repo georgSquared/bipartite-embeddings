@@ -1,21 +1,22 @@
 import typing
-from typing import Protocol, List
+from typing import List, Protocol
 
 import networkx as nx
 import numpy as np
 from numpy import ndarray
+from scipy.sparse import csr_matrix
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics.pairwise import cosine_similarity
+from stellargraph.data import EdgeSplitter
 
-from bipartite_embeddings.constants import SampleType, EdgeOperator, SimilarityMeasure
+from bipartite_embeddings.constants import EdgeOperator, SampleType, SimilarityMeasure
 from bipartite_embeddings.utils import (
+    DotDict,
     get_first_100_edges_precision,
     get_train_test_samples,
-    DotDict,
     performance_measuring,
+    top_hamming_similarity_chunked,
 )
-
-from stellargraph.data import EdgeSplitter
 
 
 class EmbeddingModel(Protocol):
@@ -49,6 +50,8 @@ class Evaluator:
         embedding_operator: typing.Optional[EdgeOperator] = None,
     ):
         self.graph = graph
+        self.large_graph = graph.number_of_nodes() > 100_000
+
         self.embedding_model = embedding_model
         self.classifier = classifier
         self.embedding_operator = embedding_operator
@@ -126,11 +129,10 @@ class Evaluator:
     ) -> ndarray:
         if similarity_measure == SimilarityMeasure.COSINE:
             similarities = cosine_similarity(embeddings)
-        elif similarity_measure == SimilarityMeasure.HAMMING:
-            # This calculates distances instead of similarities
-            similarities = (embeddings[:, None, :] == embeddings).sum(2)
         elif similarity_measure == SimilarityMeasure.DOT_PRODUCT:
             similarities = np.dot(embeddings, embeddings.T)
+        elif similarity_measure == SimilarityMeasure.HAMMING:
+            similarities = (embeddings[:, None, :] == embeddings).sum(2)
 
         else:
             raise ValueError(f"Unknown similarity measure: {similarity_measure}")
@@ -164,12 +166,47 @@ class Evaluator:
         with performance_measuring(message="Node embeddings calculation"):
             node_embeddings = self.get_node_embeddings(sample_type=SampleType.TRAIN)
 
-        # Get the similarity matrix
-        similarities = self.get_similarity_matrix(node_embeddings, similarity_measure)
+        with performance_measuring(message="Metric calculation"):
+            # If the graph is large, calculate the similarities and top similarities in chunks
+            # Only hamming distance is supported for large graphs
+            if self.large_graph:
+                if similarity_measure != SimilarityMeasure.HAMMING:
+                    raise ValueError(
+                        "Large graphs only support hamming distance similarity measure"
+                    )
 
-        return get_first_100_edges_precision(
-            similarities, self.graph, self.samples.G_train
-        )
+                # Top similarities are of the form: (similarity, node1, node2)
+                top_similarities = top_hamming_similarity_chunked(
+                    csr_matrix(node_embeddings)
+                )
+
+                traversed_count = 0
+                tp = 0
+
+                for sim_tuple in top_similarities:
+                    similiarity, node1, node2 = sim_tuple
+
+                    # Only consider edges that are not in the train graph
+                    if self.samples.G_train.has_edge(node1, node2):
+                        continue
+
+                    traversed_count += 1
+                    if self.graph.has_edge(node1, node2):
+                        tp += 1
+
+                    if tp >= 100:
+                        break
+
+                return tp / traversed_count
+
+            # Get the similarity matrix
+            similarities = self.get_similarity_matrix(
+                node_embeddings, similarity_measure
+            )
+
+            return get_first_100_edges_precision(
+                similarities, self.graph, self.samples.G_train
+            )
 
 
 class StreamingEvaluator:
@@ -211,8 +248,8 @@ class StreamingEvaluator:
         try:
             self.embedding_model.fit(self.samples.G_train, added_edges=added_edges)
         except TypeError as ex:
+            print(ex)
             print("Model does not support updates. Fitting from scratch")
-            raise ex
             self.embedding_model.fit(self.samples.G_train)
 
         return self.embedding_model.get_embedding()

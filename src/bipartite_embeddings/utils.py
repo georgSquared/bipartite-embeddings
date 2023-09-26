@@ -1,14 +1,28 @@
+import heapq
 import os
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
 from time import perf_counter
+from typing import List, Tuple
 
 import networkx as nx
 import numpy as np
 from sklearn.model_selection import train_test_split
 
 from stellargraph.data import EdgeSplitter
+from scipy.sparse import csr_matrix
+from tqdm import tqdm
+
+
+class Datasets(Enum):
+    ML_SMALL = "ml-small"
+    BLOG = "blog"
+    PPI = "ppi"
+    WIKI = "wiki"
+    DBLP = "dblp"
+    YOUTUBE = "youtube"
+    LIVEJOURNAL = "livejournal"
 
 
 class DotDict(dict):
@@ -48,12 +62,6 @@ def performance_measuring(message: str = None) -> float:
         print(f"{message or 'Operation'}: Took: {perf_counter() - start} seconds")
 
 
-class Datasets(Enum):
-    ML_SMALL = "ml-small"
-    BLOG = "blog"
-    PPI = "ppi"
-
-
 def load_graph(edgelist_path=None, dataset: Datasets = Datasets.ML_SMALL):
     """
     Load the graph from a given edgelist file
@@ -69,6 +77,16 @@ def load_graph(edgelist_path=None, dataset: Datasets = Datasets.ML_SMALL):
             edgelist_path = os.path.join(get_root_dir(), "data", "blog", "edges.csv")
         elif dataset == Datasets.PPI:
             edgelist_path = os.path.join(get_root_dir(), "data", "ppi", "edges.csv")
+        elif dataset == Datasets.WIKI:
+            edgelist_path = os.path.join(get_root_dir(), "data", "wiki", "edges.csv")
+        elif dataset == Datasets.DBLP:
+            edgelist_path = os.path.join(get_root_dir(), "data", "dblp", "edges.csv")
+        elif dataset == Datasets.YOUTUBE:
+            edgelist_path = os.path.join(get_root_dir(), "data", "youtube", "edges.csv")
+        elif dataset == Datasets.LIVEJOURNAL:
+            edgelist_path = os.path.join(
+                get_root_dir(), "data", "livejournal", "edges.csv"
+            )
         else:
             raise ValueError("Dataset not supported")
 
@@ -224,3 +242,94 @@ def get_top_similarity_precision(similarities, original_graph, train_graph):
             tp += 1
 
     return tp / 100
+
+
+def pairwise_hamming_distance_chunked(
+    X: csr_matrix, chunk_size: int = 10000
+) -> np.ndarray:
+    """Compute pairwise hamming distance for a sparse matrix using a chunking approach."""
+
+    n = X.shape[0]
+    result = np.zeros((n, n), dtype=np.int32)
+
+    for i in range(0, n, chunk_size):
+        end_i = min(i + chunk_size, n)
+        for j in range(0, n, chunk_size):
+            end_j = min(j + chunk_size, n)
+
+            dot_product = X[i:end_i] @ X[j:end_j].T
+            dot_product = dot_product.todense()
+
+            hamming_dist = X.shape[1] - dot_product
+
+            result[i:end_i, j:end_j] = hamming_dist
+
+    return result
+
+
+def pairwise_hamming_similarity_chunked(
+    X: csr_matrix, chunk_size: int = 1000
+) -> np.ndarray:
+    """Compute pairwise hamming similarity for a sparse matrix using a chunking approach."""
+
+    n, L = X.shape
+    result = np.zeros((n, n), dtype=np.int32)
+
+    row_sums = np.array(X.sum(axis=1)).ravel()  # Number of 1s in each row
+
+    for i in range(0, n, chunk_size):
+        end_i = min(i + chunk_size, n)
+        for j in range(0, n, chunk_size):
+            end_j = min(j + chunk_size, n)
+
+            dot_product = X[i:end_i] @ X[j:end_j].T
+            dot_product = dot_product.todense()
+
+            for ix in range(dot_product.shape[0]):
+                for jx in range(dot_product.shape[1]):
+                    result[i + ix, j + jx] = dot_product[ix, jx] + (
+                        L - (row_sums[i + ix] + row_sums[j + jx] - dot_product[ix, jx])
+                    )
+
+    return result
+
+
+def top_hamming_similarity_chunked(
+    X: csr_matrix, chunk_size: int = 1000, k: int = 100000
+) -> List[Tuple[int, int, int]]:
+    """Compute pairwise hamming similarity for a sparse matrix using a chunking approach
+    and return the top k similarities."""
+
+    n, L = X.shape
+    top_similarities = []  # Use a list to maintain the heap
+
+    row_sums = np.array(X.sum(axis=1)).ravel()  # Number of 1s in each row
+
+    for i in tqdm(range(0, n, chunk_size)):
+        end_i = min(i + chunk_size, n)
+        for j in range(0, n, chunk_size):
+            end_j = min(j + chunk_size, n)
+
+            dot_product = X[i:end_i] @ X[j:end_j].T
+            dot_product = dot_product.todense()
+
+            for ix in range(dot_product.shape[0]):
+                for jx in range(dot_product.shape[1]):
+                    similarity = dot_product[ix, jx] + (
+                        L - (row_sums[i + ix] + row_sums[j + jx] - dot_product[ix, jx])
+                    )
+
+                    # If we haven't yet accumulated k similarities, just push to the heap
+                    if len(top_similarities) < k:
+                        heapq.heappush(top_similarities, (similarity, i + ix, j + jx))
+                    else:
+                        # Compare the smallest similarity in the heap with the current similarity
+                        # If the current similarity is larger, push it and pop the smallest
+                        if similarity > top_similarities[0][0]:
+                            heapq.heappushpop(
+                                top_similarities, (similarity, i + ix, j + jx)
+                            )
+
+    # Convert heap to a sorted list of tuples (from largest similarity to smallest)
+    top_similarities_sorted = sorted(top_similarities, key=lambda x: x[0], reverse=True)
+    return top_similarities_sorted
