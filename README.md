@@ -1,4 +1,5 @@
-# Graph Bipartite Embeddings for Link Prediction
+# Livesketch
 
-This is a research repository for producing efficient embeddings 
-from bipartite graphs to be used mainly in link prediction tasks
+This is a research repository for Scalable Network Representation Learning in Graph Streams
+
+More descriptive README coming soon
