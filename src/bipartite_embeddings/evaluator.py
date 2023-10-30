@@ -163,7 +163,7 @@ class Evaluator:
         self, similarity_measure: SimilarityMeasure = SimilarityMeasure.HAMMING
     ) -> float:
         # Get the node embeddings for the train Graph
-        with performance_measuring(message="Node embeddings calculation"):
+        with performance_measuring(message="Node embeddings calculation") as emb_perf:
             node_embeddings = self.get_node_embeddings(sample_type=SampleType.TRAIN)
 
         with performance_measuring(message="Metric calculation"):
@@ -197,16 +197,18 @@ class Evaluator:
                     if tp >= 100:
                         break
 
-                return tp / traversed_count
+                precision = tp / traversed_count
+                return precision, emb_perf.elapsed
 
             # Get the similarity matrix
             similarities = self.get_similarity_matrix(
                 node_embeddings, similarity_measure
             )
 
-            return get_first_100_edges_precision(
+            precision = get_first_100_edges_precision(
                 similarities, self.graph, self.samples.G_train
             )
+            return precision, emb_perf.elapsed
 
 
 class StreamingEvaluator:
@@ -214,14 +216,15 @@ class StreamingEvaluator:
         self,
         graph: nx.Graph,
         embedding_model: EmbeddingModel,
+        initial_graph_percentage: float = 0.5,
     ):
         self.graph = graph
         self.embedding_model = embedding_model
-        self.samples = get_train_test_samples(self.graph)
 
+        p_val = 1 - initial_graph_percentage
         reduced_graph, stream_edge_ids, stream_edge_labels = EdgeSplitter(
-            self.samples.G_train
-        ).train_test_split(p=0.5, method="global", keep_connected=True)
+            self.graph
+        ).train_test_split(p=p_val, method="global", keep_connected=True)
 
         self.reduced_graph = reduced_graph
         self.stream_edge_ids = stream_edge_ids
@@ -246,11 +249,12 @@ class StreamingEvaluator:
 
     def get_node_embeddings(self, added_edges: list = None) -> ndarray:
         try:
-            self.embedding_model.fit(self.samples.G_train, added_edges=added_edges)
+            # Perhaps this should be the reduced graph?
+            self.embedding_model.fit(self.reduced_graph, added_edges=added_edges)
         except TypeError as ex:
             print(ex)
             print("Model does not support updates. Fitting from scratch")
-            self.embedding_model.fit(self.samples.G_train)
+            self.embedding_model.fit(self.reduced_graph)
 
         return self.embedding_model.get_embedding()
 
@@ -270,7 +274,7 @@ class StreamingEvaluator:
             )
 
             return get_first_100_edges_precision(
-                similarities, self.graph, self.samples.G_train
+                similarities, self.graph, self.reduced_graph
             )
 
     def streamify(self, batch_count: int = None):
@@ -279,20 +283,18 @@ class StreamingEvaluator:
 
         added_edge_count = 0
         for edge in self.stream_edge_ids:
-            if self.samples.G_train.has_edge(edge[0], edge[1]):
+            if self.reduced_graph.has_edge(edge[0], edge[1]):
                 continue
 
             added_edge_count += 1
-            self.samples.G_train.add_edge(edge[0], edge[1])
+            self.reduced_graph.add_edge(edge[0], edge[1])
             self.added_edges.append(edge)
 
             if batch_count:
                 if added_edge_count % batch_count == 0:
                     precision = self.get_precision_at_100(added_edges=self.added_edges)
 
-                    print(
-                        f"Graph edge count: {self.samples.G_train.number_of_edges()}."
-                    )
+                    print(f"Graph edge count: {self.reduced_graph.number_of_edges()}.")
                     print(f"Precision@100: {precision}")
                     print()
 
@@ -304,7 +306,7 @@ class StreamingEvaluator:
             else:
                 precision = self.get_precision_at_100(added_edges=self.added_edges)
 
-                print(f"Graph edge count: {self.samples.G_train.number_of_edges()}.")
+                print(f"Graph edge count: {self.reduced_graph.number_of_edges()}.")
                 print(f"Precision@100: {precision}")
                 print()
 

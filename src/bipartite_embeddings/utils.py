@@ -53,13 +53,20 @@ def get_root_dir():
     return Path(__file__).parent.parent.parent
 
 
+class PerformanceResult:
+    def __init__(self):
+        self.elapsed = 0.0
+
+
 @contextmanager
 def performance_measuring(message: str = None) -> float:
+    result = PerformanceResult()
     start = perf_counter()
     try:
-        yield
+        yield result
     finally:
-        print(f"{message or 'Operation'}: Took: {perf_counter() - start} seconds")
+        result.elapsed = perf_counter() - start
+        print(f"{message or 'Operation'}: Took: {result.elapsed} seconds")
 
 
 def load_graph(edgelist_path=None, dataset: Datasets = Datasets.ML_SMALL):
