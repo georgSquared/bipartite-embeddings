@@ -8,8 +8,8 @@ from sklearn.linear_model import LogisticRegressionCV
 from livesketch import Livesketch
 from utils import Datasets, load_graph
 
-from bipartite_embeddings.constants import ROOT_DIR, EdgeOperator, SimilarityMeasure
-from bipartite_embeddings.evaluator import EmbeddingModel, Evaluator, StreamingEvaluator
+from livesketch.constants import ROOT_DIR, EdgeOperator, SimilarityMeasure
+from livesketch.evaluator import EmbeddingModel, Evaluator, StreamingEvaluator
 
 from karateclub.node_embedding.neighbourhood.nodesketch import NodeSketch
 

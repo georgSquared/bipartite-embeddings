@@ -1,6 +1,6 @@
 from networkx.algorithms import bipartite
 
-from bipartite_embeddings.utils import load_graph
+from livesketch.utils import load_graph
 
 
 def test_load_movie_lens_small():
