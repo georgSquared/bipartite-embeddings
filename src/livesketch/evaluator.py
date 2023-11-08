@@ -216,7 +216,7 @@ class StreamingEvaluator:
         self,
         graph: nx.Graph,
         embedding_model: EmbeddingModel,
-        initial_graph_percentage: float = 0.9,
+        initial_graph_percentage: float = 0.5,
     ):
         self.graph = graph
         self.embedding_model = embedding_model
