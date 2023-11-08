@@ -9,8 +9,8 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics.pairwise import cosine_similarity
 from stellargraph.data import EdgeSplitter
 
-from bipartite_embeddings.constants import EdgeOperator, SampleType, SimilarityMeasure
-from bipartite_embeddings.utils import (
+from livesketch.constants import EdgeOperator, SampleType, SimilarityMeasure
+from livesketch.utils import (
     DotDict,
     get_first_100_edges_precision,
     get_train_test_samples,
@@ -216,7 +216,7 @@ class StreamingEvaluator:
         self,
         graph: nx.Graph,
         embedding_model: EmbeddingModel,
-        initial_graph_percentage: float = 0.5,
+        initial_graph_percentage: float = 0.9,
     ):
         self.graph = graph
         self.embedding_model = embedding_model
@@ -284,6 +284,9 @@ class StreamingEvaluator:
         added_edge_count = 0
         for edge in self.stream_edge_ids:
             if self.reduced_graph.has_edge(edge[0], edge[1]):
+                continue
+
+            if edge[0] >= edge[1]:
                 continue
 
             added_edge_count += 1
